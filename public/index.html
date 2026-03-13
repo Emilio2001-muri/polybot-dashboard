@@ -464,8 +464,46 @@ function renderStats(){
   $('statsBody').innerHTML=`<tr><td>Total Trades</td><td>${s.total_trades||0}</td></tr><tr><td>Ganadores</td><td>${s.wins||0}</td></tr><tr><td>Perdedores</td><td>${s.losses||0}</td></tr><tr><td>Win Rate</td><td>${s.win_rate||0}%</td></tr><tr><td>PnL Total</td><td class="${(b.pnl||0)>=0?'pos':'neg'}">$${(b.pnl||0)>=0?'+':''}${(b.pnl||0).toFixed(4)}</td></tr>`;
 }
 
-function runScan(n){const el=$('scanStatus');el.className='scan-status running';el.textContent='📡 Para ejecutar escaneos, usa el dashboard local (localhost:8501) o ejecuta main.py. Los resultados se sincronizarán aquí automáticamente via el pusher.';el.style.display='block';setTimeout(()=>{el.style.display='none'},8000)}
-function runSim(){const el=$('simStatus');el.className='scan-status running';el.textContent='🧪 Para ejecutar simulaciones, usa el dashboard local (localhost:8501). Los resultados se sincronizarán aquí.';el.style.display='block';setTimeout(()=>{el.style.display='none'},8000)}
+function runScan(n){
+  n=parseInt(n);const isLoop=n>=50;
+  const el=$('scanStatus');el.className='scan-status running';el.style.display='block';
+  el.textContent='📡 Enviando comando al bot...';
+  const cmdId=Date.now().toString(36);
+  sb.from('dashboard_cache').upsert({key:'pb_command',value:{id:cmdId,action:'scan',count:n,is_loop:isLoop,status:'pending',requested_at:new Date().toISOString()}},{onConflict:'key'}).then(({error})=>{
+    if(error){el.textContent='❌ Error enviando comando: '+error.message;setTimeout(()=>{el.style.display='none'},6000);return}
+    el.textContent='⏳ Comando enviado — esperando que el bot lo ejecute...';
+    pollCommand(cmdId,el);
+  });
+}
+function runSim(){
+  const el=$('simStatus');el.className='scan-status running';el.style.display='block';
+  el.textContent='🧪 Para ejecutar simulaciones, usa el dashboard local (localhost:8501). Los escaneos LIVE se pueden ejecutar desde aquí.';
+  setTimeout(()=>{el.style.display='none'},8000);
+}
+function pollCommand(cmdId,el){
+  let polls=0;const maxPolls=120;
+  const iv=setInterval(async()=>{
+    polls++;if(polls>maxPolls){clearInterval(iv);el.textContent='⏰ Timeout — revisa que el pusher esté corriendo localmente.';setTimeout(()=>{el.style.display='none'},6000);return}
+    try{
+      const{data}=await sb.from('dashboard_cache').select('value').eq('key','pb_command').single();
+      if(!data)return;const cmd=data.value;
+      if(cmd.id!==cmdId)return;
+      if(cmd.status==='running'){el.textContent='🔄 Bot ejecutando escaneo... ('+(cmd.progress||0)+')'}
+      else if(cmd.status==='completed'){
+        clearInterval(iv);
+        const r=cmd.results||[];
+        const totalTrades=r.reduce((s,x)=>s+(x.trades||0),0);
+        const totalMarkets=r.reduce((s,x)=>s+(x.markets||0),0);
+        el.className='scan-status running';
+        el.textContent='✅ '+r.length+' escaneo(s) completados — '+totalMarkets+' mercados revisados, '+totalTrades+' trades ejecutados';
+        setTimeout(()=>{el.style.display='none'},10000);
+        loadAll();
+      }else if(cmd.status==='error'){
+        clearInterval(iv);el.textContent='❌ Error: '+(cmd.error||'desconocido');setTimeout(()=>{el.style.display='none'},8000);
+      }
+    }catch(e){console.error('Poll:',e)}
+  },3000);
+}
 
 function esc(s){if(!s)return'—';const d=document.createElement('div');d.textContent=String(s);return d.innerHTML}
 function shortDate(s){if(!s)return'—';try{return new Date(s).toLocaleString('sv-SE')}catch{return'—'}}

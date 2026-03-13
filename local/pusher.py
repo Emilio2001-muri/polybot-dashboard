@@ -213,6 +213,128 @@ def collect_and_push():
 
 
 # ============================================================
+# REMOTE COMMAND EXECUTION
+# ============================================================
+_engine = None  # reuse engine across scans for position tracking
+
+
+def _get_engine():
+    global _engine
+    if _engine is None:
+        from trading_engine import TradingEngine
+        _engine = TradingEngine()
+    return _engine
+
+
+def _execute_scans(count: int, is_loop: bool = False):
+    """Run N scan cycles using the TradingEngine, saving results to DB."""
+    db = TradeDatabase()
+    engine = _get_engine()
+    results = []
+
+    for i in range(count):
+        try:
+            scan = engine.run_scan_cycle()
+            state = engine.risk.get_state()
+
+            db.save_scan_log({
+                "scan_number": i + 1,
+                "markets_scanned": scan.markets_scanned,
+                "arbitrage_found": scan.arbitrage_found,
+                "trades_executed": scan.trades_executed,
+                "trades_skipped": scan.trades_skipped,
+                "duration_seconds": scan.duration_seconds,
+                "errors": scan.errors,
+            })
+            db.save_balance_snapshot({
+                "balance": state.balance,
+                "total_pnl": state.total_pnl,
+                "daily_pnl": state.daily_pnl,
+                "open_positions": state.open_positions_count,
+                "risk_score": state.risk_score,
+            })
+            results.append({
+                "scan": i + 1,
+                "markets": scan.markets_scanned,
+                "arb": scan.arbitrage_found,
+                "trades": scan.trades_executed,
+                "duration": scan.duration_seconds,
+                "errors": scan.errors,
+            })
+            logger.info(
+                f"CMD scan {i+1}/{count}: "
+                f"markets={scan.markets_scanned} arb={scan.arbitrage_found} "
+                f"trades={scan.trades_executed}"
+            )
+        except Exception as e:
+            logger.error(f"CMD scan {i+1} error: {e}")
+            results.append({"scan": i + 1, "error": str(e)})
+            break
+
+        # Wait between scans (except after last)
+        if i < count - 1:
+            wait = config.SCAN_INTERVAL_SECONDS if is_loop else 3
+            time.sleep(wait)
+
+    return results
+
+
+def check_and_execute_commands():
+    """Check Supabase for pending commands from the Vercel dashboard."""
+    try:
+        resp = sb.table(TABLE).select("value").eq("key", PREFIX + "command").execute()
+        if not resp.data:
+            return
+        cmd = resp.data[0].get("value", {})
+        if not cmd or not isinstance(cmd, dict):
+            return
+        status = cmd.get("status", "")
+        if status != "pending":
+            return
+
+        action = cmd.get("action", "")
+        count = int(cmd.get("count", 1))
+        is_loop = cmd.get("is_loop", False)
+        cmd_id = cmd.get("id", "")
+
+        logger.info(f"📥 Command received: {action} count={count} id={cmd_id}")
+
+        # Mark as running
+        upsert("command", {
+            "id": cmd_id,
+            "action": action,
+            "status": "running",
+            "count": count,
+            "progress": 0,
+            "started_at": datetime.now(timezone.utc).isoformat(),
+        })
+
+        if action == "scan":
+            results = _execute_scans(count, is_loop)
+            # Push fresh data immediately after scans
+            collect_and_push()
+            # Mark as completed
+            upsert("command", {
+                "id": cmd_id,
+                "action": action,
+                "status": "completed",
+                "count": count,
+                "results": results,
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+            })
+            logger.info(f"✅ Command completed: {len(results)} scans done")
+        else:
+            upsert("command", {
+                "id": cmd_id,
+                "status": "error",
+                "error": f"Unknown action: {action}",
+            })
+
+    except Exception as e:
+        logger.error(f"Command check error: {e}")
+
+
+# ============================================================
 # MAIN LOOP
 # ============================================================
 def main():
@@ -220,18 +342,19 @@ def main():
     logger.info("PolyBot Data Pusher — Supabase")
     logger.info(f"Push interval: {PUSH_INTERVAL}s")
     logger.info(f"Supabase: {SUPABASE_URL[:40]}...")
+    logger.info("Commands: ENABLED (remote scan execution)")
     logger.info("=" * 50)
 
     while True:
         try:
+            check_and_execute_commands()
             collect_and_push()
         except KeyboardInterrupt:
             logger.info("Pusher stopped by user")
-            # Mark bot as stopped
             upsert("status", {
                 "mode": config.TRADING_MODE,
                 "bot_running": False,
-                "last_scan": datetime.utcnow().isoformat(),
+                "last_scan": datetime.now(timezone.utc).isoformat(),
                 "wallet": "",
             })
             break
