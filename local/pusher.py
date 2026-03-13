@@ -66,18 +66,19 @@ except ImportError:
     sys.exit(1)
 
 
-TABLE = "polybot_cache"
+TABLE = "dashboard_cache"
+PREFIX = "pb_"
 
 def upsert(key: str, value):
-    """Update a row in polybot_cache."""
+    """Update a row in dashboard_cache with pb_ prefix."""
     try:
         sb.table(TABLE).upsert({
-            "key": key,
+            "key": PREFIX + key,
             "value": value,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }).execute()
     except Exception as e:
-        logger.error(f"Supabase upsert '{key}' failed: {e}")
+        logger.error(f"Supabase upsert '{PREFIX}{key}' failed: {e}")
 
 
 # ============================================================

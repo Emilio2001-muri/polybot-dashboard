@@ -312,11 +312,12 @@ setInterval(tickClock,1000);tickClock();
 /* ─── SUPABASE LOAD ─── */
 async function loadAll(){
   try{
-    const{data,error}=await sb.from('polybot_cache').select('key,value');
+    const{data,error}=await sb.from('dashboard_cache').select('key,value').like('key','pb_%');
     if(error)throw error;
     if(!data||data.length===0){setOffline('Sin datos');return}
     data.forEach(r=>{
-      cache[r.key]=r.value;
+      const k=r.key.replace('pb_','');
+      cache[k]=r.value;
     });
     renderAll();
     setConnected();
@@ -329,8 +330,9 @@ async function loadAll(){
 /* ─── REALTIME ─── */
 function setupRealtime(){
   sb.channel('polybot-changes')
-    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'polybot_cache'},payload=>{
-      cache[payload.new.key]=payload.new.value;
+    .on('postgres_changes',{event:'*',schema:'public',table:'dashboard_cache',filter:'key=like.pb_%'},payload=>{
+      const k=payload.new.key.replace('pb_','');
+      cache[k]=payload.new.value;
       renderAll();
       flashPill();
     })
