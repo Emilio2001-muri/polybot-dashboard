@@ -208,6 +208,7 @@ a{color:var(--blue);text-decoration:none}a:hover{text-decoration:underline}
   <div class="sb-wallet" id="sbWalletMobile">🔴 <span id="walletShortMobile">—</span></div>
   <div class="sb-divider"></div>
   <button class="sb-btn" onclick="location.reload()">🔄 Refrescar</button>
+  <button class="sb-btn" onclick="clearCache()" style="color:var(--red)">🗑️ Limpiar Cache</button>
   <details class="sb-expander">
     <summary>⚙️ Configuración</summary>
     <div class="sb-expander-body">
@@ -243,6 +244,7 @@ a{color:var(--blue);text-decoration:none}a:hover{text-decoration:underline}
   <div class="sb-divider"></div>
 
   <button class="sb-btn" onclick="location.reload()">🔄 Refrescar</button>
+  <button class="sb-btn" onclick="clearCache()" style="color:var(--red)">🗑️ Limpiar Cache</button>
   <label class="sb-toggle"><input type="checkbox" id="autoRefresh"> Auto-refresh 30s</label>
 
   <div class="sb-divider"></div>
@@ -283,6 +285,7 @@ a{color:var(--blue);text-decoration:none}a:hover{text-decoration:underline}
           <button onclick="document.documentElement.style.setProperty('--bg','#ffffff');document.documentElement.style.setProperty('--surface','#f0f2f6');document.documentElement.style.setProperty('--txt','#1a1a2e');document.documentElement.style.setProperty('--txt2','#555');document.documentElement.style.setProperty('--txt3','#888');document.documentElement.style.setProperty('--border','rgba(0,0,0,0.08)');$('dotPanel').classList.remove('open')">☀️ Light</button>
           <div class="dot-menu-sep"></div>
           <button onclick="$('autoRefresh').checked=!$('autoRefresh').checked;$('autoRefresh').dispatchEvent(new Event('change'));$('dotPanel').classList.remove('open')">⏱️ Auto-refresh toggle</button>
+          <button onclick="clearCache();$('dotPanel').classList.remove('open')">🗑️ Limpiar Cache</button>
           <div class="dot-menu-sep"></div>
           <a href="https://polygonscan.com/address/0xB7d3f4EC33414dC3B3e9f9a0cCAbC21bf30fAa99" target="_blank">🔗 PolygonScan</a>
           <a href="https://polymarket.com" target="_blank">🎯 Polymarket</a>
@@ -336,9 +339,10 @@ a{color:var(--blue);text-decoration:none}a:hover{text-decoration:underline}
         <button class="action-btn" onclick="runScan(document.getElementById('nScans').value)">🔁 Ejecutar Escaneos</button>
       </div>
       <div class="action-card">
-        <h4>♾️ Loop Automático</h4>
-        <p>Escanea cada <b>180s</b> hasta que cierres esta página.</p>
-        <button class="action-btn" onclick="runScan(50)">♾️ Iniciar Loop</button>
+        <h4>♾️ Loop 24/7</h4>
+        <p>Escanea cada <b>3 min</b> de forma continua. El bot opera solo mientras el pusher corra.</p>
+        <button class="action-btn" onclick="startAutoLoop()" id="btnAutoLoop">♾️ Iniciar 24/7</button>
+        <button class="action-btn" onclick="stopAutoLoop()" id="btnStopLoop" style="display:none;color:var(--red)">⏹️ Detener</button>
       </div>
     </div>
     <div class="scan-status" id="scanStatus"></div>
@@ -423,7 +427,7 @@ const sb=supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
 
 let cache={status:{},balance:{},stats:{},trades:[],balance_history:[],scan_log:[],open_positions:[],risk:{}};
 let balChart=null,pnlChart=null;
-let userModeOverride=null;
+let userModeOverride=localStorage.getItem('pb_mode');
 const $=id=>document.getElementById(id);
 
 /* ─── MODE TOGGLE ─── */
@@ -477,6 +481,12 @@ function renderStatus(){
   const wm=s.wallet||'';
   $('walletShortMobile').textContent=wm||'—';
   if(s.last_scan){$('timestamp').textContent='Última actualización: '+new Date(s.last_scan).toLocaleString('sv-SE')}
+  // Restore autoloop button state from server
+  if(s.autoloop){
+    autoLoopRunning=true;
+    $('btnAutoLoop').style.display='none';$('btnStopLoop').style.display='block';
+    const el=$('scanStatus');if(el){el.className='scan-status running';el.style.display='block';el.textContent='♾️ Modo 24/7 activo — escaneo cada 3 min';}
+  }
   const w=s.wallet||'';
   $('walletShort').textContent=w||'—';
   $('walletAddr').textContent=w||'—';
@@ -602,6 +612,7 @@ function pollCommand(cmdId,el){
 
 function setMode(mode){
   userModeOverride=mode;
+  localStorage.setItem('pb_mode',mode);
   const isDemo=mode==='simulation';
   $('radioDemo').checked=isDemo;$('radioLive').checked=!isDemo;
   $('optDemo').classList.toggle('active',isDemo);$('optLive').classList.toggle('active',!isDemo);
@@ -620,11 +631,45 @@ function toggleMobileSidebar(){
   $('mobileOverlay').classList.toggle('open');
 }
 
+async function clearCache(){
+  if(!confirm('¿Limpiar toda la data? (trades, logs, charts)')) return;
+  const cmdId=Date.now().toString(36);
+  await sb.from('dashboard_cache').upsert({key:'pb_command',value:{id:cmdId,action:'clear',status:'pending',requested_at:new Date().toISOString()}},{onConflict:'key'});
+  // Also clear local cache display
+  cache={status:cache.status,balance:{},stats:{},trades:[],balance_history:[],scan_log:[],open_positions:[],risk:{}};
+  if(balChart){balChart.destroy();balChart=null}
+  if(pnlChart){pnlChart.destroy();pnlChart=null}
+  renderAll();
+  alert('✅ Cache limpiado. El pusher limpiará la BD local.');
+}
+
+let autoLoopRunning=false;
+function startAutoLoop(){
+  autoLoopRunning=true;
+  $('btnAutoLoop').style.display='none';
+  $('btnStopLoop').style.display='block';
+  const el=$('scanStatus');el.className='scan-status running';el.style.display='block';
+  el.textContent='♾️ Modo 24/7 activado — escaneo cada 3 min';
+  const cmdId=Date.now().toString(36);
+  sb.from('dashboard_cache').upsert({key:'pb_command',value:{id:cmdId,action:'autoloop',status:'pending',requested_at:new Date().toISOString()}},{onConflict:'key'});
+}
+function stopAutoLoop(){
+  autoLoopRunning=false;
+  $('btnAutoLoop').style.display='block';
+  $('btnStopLoop').style.display='none';
+  $('scanStatus').style.display='none';
+  const cmdId=Date.now().toString(36);
+  sb.from('dashboard_cache').upsert({key:'pb_command',value:{id:cmdId,action:'stop_loop',status:'pending',requested_at:new Date().toISOString()}},{onConflict:'key'});
+}
+
 function esc(s){if(!s)return'—';const d=document.createElement('div');d.textContent=String(s);return d.innerHTML}
 function shortDate(s){if(!s)return'—';try{return new Date(s).toLocaleString('sv-SE')}catch{return'—'}}
 
 // Close dot menu on click outside
 document.addEventListener('click',e=>{if(!e.target.closest('.dot-menu'))$('dotPanel').classList.remove('open')});
+
+// Restore mode from localStorage on page load
+if(userModeOverride){setMode(userModeOverride)}
 
 loadAll();setInterval(loadAll,15000);
 </script>

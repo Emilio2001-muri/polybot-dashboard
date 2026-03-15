@@ -100,6 +100,7 @@ def collect_and_push():
     upsert("status", {
         "mode": mode,
         "bot_running": True,
+        "autoloop": _autoloop_active,
         "last_scan": datetime.now(timezone.utc).isoformat(),
         "wallet": wallet_short,
     })
@@ -220,6 +221,7 @@ def collect_and_push():
 # REMOTE COMMAND EXECUTION
 # ============================================================
 _engine = None  # reuse engine across scans for position tracking
+_autoloop_active = False  # True when 24/7 mode is running
 
 
 def _get_engine():
@@ -405,6 +407,39 @@ def check_and_execute_commands():
             })
             logger.info(f"✅ Simulation completed: {sim_result['total_trades']} trades")
 
+        elif action == "clear":
+            db = TradeDatabase()
+            db.clear_all()
+            collect_and_push()
+            upsert("command", {
+                "id": cmd_id,
+                "action": action,
+                "status": "completed",
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+            })
+            logger.info("✅ Cache cleared: all trades, logs, balance wiped")
+
+        elif action == "autoloop":
+            global _autoloop_active
+            _autoloop_active = True
+            upsert("command", {
+                "id": cmd_id,
+                "action": action,
+                "status": "completed",
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+            })
+            logger.info("✅ Auto-loop 24/7 activated — scanning every 3 min")
+
+        elif action == "stop_loop":
+            _autoloop_active = False
+            upsert("command", {
+                "id": cmd_id,
+                "action": action,
+                "status": "completed",
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+            })
+            logger.info("✅ Auto-loop stopped")
+
         else:
             upsert("command", {
                 "id": cmd_id,
@@ -419,18 +454,59 @@ def check_and_execute_commands():
 # ============================================================
 # MAIN LOOP
 # ============================================================
+_last_autoloop_scan = 0  # timestamp of last auto-loop scan
+
+
 def main():
+    global _last_autoloop_scan
     logger.info("=" * 50)
     logger.info("PolyBot Data Pusher — Supabase")
     logger.info(f"Push interval: {PUSH_INTERVAL}s")
     logger.info(f"Supabase: {SUPABASE_URL[:40]}...")
     logger.info("Commands: ENABLED (remote scan execution)")
+    logger.info("Auto-loop: ready (activate from dashboard)")
     logger.info("=" * 50)
 
     while True:
         try:
             check_and_execute_commands()
-            # Regular periodic push uses live mode (sim push already happened inside command handler)
+
+            # --- Auto-loop: run a scan every SCAN_INTERVAL_SECONDS ---
+            if _autoloop_active:
+                now = time.time()
+                if now - _last_autoloop_scan >= config.SCAN_INTERVAL_SECONDS:
+                    _last_autoloop_scan = now
+                    logger.info("♾️ Auto-loop scan triggered")
+                    try:
+                        db = TradeDatabase()
+                        engine = _get_engine()
+                        scan = engine.run_scan_cycle()
+                        state = engine.risk.get_state()
+                        db.save_scan_log({
+                            "scan_number": len(db.get_scan_logs(limit=9999)) + 1,
+                            "markets_scanned": scan.markets_scanned,
+                            "arbitrage_found": scan.arbitrage_found,
+                            "trades_executed": scan.trades_executed,
+                            "trades_skipped": scan.trades_skipped,
+                            "duration_seconds": scan.duration_seconds,
+                            "errors": scan.errors,
+                        })
+                        db.save_balance_snapshot({
+                            "balance": state.balance,
+                            "total_pnl": state.total_pnl,
+                            "daily_pnl": state.daily_pnl,
+                            "open_positions": state.open_positions_count,
+                            "risk_score": state.risk_score,
+                        })
+                        logger.info(
+                            f"♾️ Auto-loop scan done: "
+                            f"markets={scan.markets_scanned} arb={scan.arbitrage_found} "
+                            f"trades={scan.trades_executed}"
+                        )
+                    except Exception as e:
+                        logger.error(f"Auto-loop scan error: {e}")
+
+            # Regular periodic push uses live mode
             global _sim_mode_active
             _sim_mode_active = False
             collect_and_push()
