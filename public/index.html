@@ -143,17 +143,68 @@ a{color:var(--blue);text-decoration:none}a:hover{text-decoration:underline}
 .scan-status{padding:12px 16px;border-radius:8px;font-size:13px;margin:8px 0;display:none}
 .scan-status.running{display:block;background:rgba(74,158,255,0.08);border:1px solid rgba(74,158,255,0.2);color:var(--blue)}
 
+/* ─── MOBILE TOP BAR ─── */
+.mobile-bar{display:none;background:var(--bg);border-bottom:1px solid var(--border);padding:10px 16px;align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:100}
+.mobile-bar .mb-title{font-size:16px;font-weight:700}
+.mobile-bar .mb-mode{display:flex;gap:6px;align-items:center}
+.mobile-bar .mb-btn{padding:6px 12px;border-radius:8px;border:1px solid var(--border2);font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font);transition:.2s}
+.mobile-bar .mb-btn.active-demo{background:var(--green-bg);color:var(--green);border-color:var(--green-border)}
+.mobile-bar .mb-btn.active-live{background:var(--red-bg);color:var(--red);border-color:var(--red-border)}
+.mobile-bar .mb-btn:not(.active-demo):not(.active-live){background:transparent;color:var(--txt3)}
+.mb-menu-btn{background:none;border:none;color:var(--txt);font-size:20px;cursor:pointer;padding:4px}
+.mobile-sidebar{display:none;position:fixed;top:0;left:0;width:280px;height:100vh;background:var(--bg);border-right:1px solid var(--border);z-index:200;padding:20px 16px;overflow-y:auto}
+.mobile-sidebar.open{display:flex;flex-direction:column;gap:12px}
+.mobile-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:199}
+.mobile-overlay.open{display:block}
+
 /* ─── RESPONSIVE ─── */
 @media(max-width:900px){
   .sidebar{display:none}
+  .mobile-bar{display:flex}
+  .app{flex-direction:column}
   .kpi-grid{grid-template-columns:repeat(2,1fr)}
   .charts-row,.logs-row,.actions-grid{grid-template-columns:1fr}
-  .main{padding:16px}
+  .main{padding:16px;height:auto;overflow-y:auto}
+  .header h1{font-size:20px}
+  .steps-table{font-size:11px}
+  .steps-table th,.steps-table td{padding:6px 8px}
 }
 </style>
 </head>
 <body>
 <div class="app">
+
+<!-- ═══ MOBILE TOP BAR ═══ -->
+<div class="mobile-bar">
+  <div style="display:flex;align-items:center;gap:8px">
+    <button class="mb-menu-btn" onclick="toggleMobileSidebar()" aria-label="Menu">☰</button>
+    <span class="mb-title">🎯 PolyBot</span>
+  </div>
+  <div class="mb-mode">
+    <button class="mb-btn active-live" id="mbBtnDemo" onclick="setMode('simulation')">DEMO</button>
+    <button class="mb-btn" id="mbBtnLive" onclick="setMode('live')">LIVE</button>
+  </div>
+</div>
+<div class="mobile-overlay" id="mobileOverlay" onclick="toggleMobileSidebar()"></div>
+<div class="mobile-sidebar" id="mobileSidebar">
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <div class="sb-title">🎯 PolyBot</div>
+    <button class="mb-menu-btn" onclick="toggleMobileSidebar()">✕</button>
+  </div>
+  <div class="sb-caption">Polymarket Trading Bot</div>
+  <div class="sb-divider"></div>
+  <div class="sb-wallet" id="sbWalletMobile">🔴 <span id="walletShortMobile">—</span></div>
+  <div class="sb-divider"></div>
+  <button class="sb-btn" onclick="location.reload()">🔄 Refrescar</button>
+  <details class="sb-expander">
+    <summary>⚙️ Configuración</summary>
+    <div class="sb-expander-body">
+      <b>Max apuesta:</b> $5.00<br><b>Max posiciones:</b> 3<br><b>Stop-loss:</b> 15%<br><b>Intervalo:</b> 180s<br><b>Umbral arb:</b> 0.995
+    </div>
+  </details>
+  <div class="sb-divider"></div>
+  <div class="sb-warning">⚠️ No es consejo financiero.</div>
+</div>
 
 <!-- ═══ SIDEBAR ═══ -->
 <div class="sidebar">
@@ -343,17 +394,7 @@ const $=id=>document.getElementById(id);
 
 /* ─── MODE TOGGLE ─── */
 document.querySelectorAll('input[name="mode"]').forEach(r=>{
-  r.addEventListener('change',()=>{
-    const isDemo=r.value==='simulation';
-    $('optDemo').classList.toggle('active',isDemo);
-    $('optLive').classList.toggle('active',!isDemo);
-    $('modeBadge').className='mode-badge '+(isDemo?'demo':'live');
-    $('modeBadge').textContent=isDemo?'✅ 🟢 MODO DEMO':'⚠️ 🔴 MODO LIVE';
-    $('headerBadge').className='badge '+(isDemo?'demo':'live');
-    $('headerBadge').textContent=isDemo?'🟢 DEMO':'🔴 LIVE';
-    $('panelLive').style.display=isDemo?'none':'block';
-    $('panelDemo').style.display=isDemo?'block':'none';
-  });
+  r.addEventListener('change',()=>setMode(r.value));
 });
 
 /* ─── AUTO REFRESH ─── */
@@ -393,6 +434,12 @@ function renderStatus(){
   $('headerBadge').textContent=isLive?'🔴 LIVE':'🟢 DEMO';
   $('panelLive').style.display=isLive?'block':'none';
   $('panelDemo').style.display=isLive?'none':'block';
+  // Mobile bar mode buttons
+  $('mbBtnDemo').className='mb-btn'+(!isLive?' active-demo':'');
+  $('mbBtnLive').className='mb-btn'+(isLive?' active-live':'');
+  // Mobile wallet
+  const wm=s.wallet||'';
+  $('walletShortMobile').textContent=wm||'—';
   if(s.last_scan){$('timestamp').textContent='Última actualización: '+new Date(s.last_scan).toLocaleString('sv-SE')}
   const w=s.wallet||'';
   $('walletShort').textContent=w||'—';
@@ -476,9 +523,16 @@ function runScan(n){
   });
 }
 function runSim(){
+  const bal=parseInt($('simBalance').value)||50;
+  const rounds=parseInt($('simRounds').value)||30;
   const el=$('simStatus');el.className='scan-status running';el.style.display='block';
-  el.textContent='🧪 Para ejecutar simulaciones, usa el dashboard local (localhost:8501). Los escaneos LIVE se pueden ejecutar desde aquí.';
-  setTimeout(()=>{el.style.display='none'},8000);
+  el.textContent='🧪 Enviando simulación al bot...';
+  const cmdId=Date.now().toString(36);
+  sb.from('dashboard_cache').upsert({key:'pb_command',value:{id:cmdId,action:'simulate',balance:bal,rounds:rounds,status:'pending',requested_at:new Date().toISOString()}},{onConflict:'key'}).then(({error})=>{
+    if(error){el.textContent='❌ Error: '+error.message;setTimeout(()=>{el.style.display='none'},6000);return}
+    el.textContent='⏳ Simulación enviada — el bot la está ejecutando...';
+    pollCommand(cmdId,el);
+  });
 }
 function pollCommand(cmdId,el){
   let polls=0;const maxPolls=120;
@@ -491,11 +545,16 @@ function pollCommand(cmdId,el){
       if(cmd.status==='running'){el.textContent='🔄 Bot ejecutando escaneo... ('+(cmd.progress||0)+')'}
       else if(cmd.status==='completed'){
         clearInterval(iv);
-        const r=cmd.results||[];
-        const totalTrades=r.reduce((s,x)=>s+(x.trades||0),0);
-        const totalMarkets=r.reduce((s,x)=>s+(x.markets||0),0);
-        el.className='scan-status running';
-        el.textContent='✅ '+r.length+' escaneo(s) completados — '+totalMarkets+' mercados revisados, '+totalTrades+' trades ejecutados';
+        const r=cmd.results||[];const sr=cmd.sim_result;
+        if(sr){
+          el.className='scan-status running';
+          el.textContent='✅ Simulación completada — '+sr.total_trades+' trades, Balance: $'+sr.final_balance+', PnL: $'+(sr.total_pnl>=0?'+':'')+sr.total_pnl+', Win Rate: '+sr.win_rate+'%';
+        }else{
+          const totalTrades=r.reduce((s,x)=>s+(x.trades||0),0);
+          const totalMarkets=r.reduce((s,x)=>s+(x.markets||0),0);
+          el.className='scan-status running';
+          el.textContent='✅ '+r.length+' escaneo(s) completados — '+totalMarkets+' mercados revisados, '+totalTrades+' trades ejecutados';
+        }
         setTimeout(()=>{el.style.display='none'},10000);
         loadAll();
       }else if(cmd.status==='error'){
@@ -503,6 +562,25 @@ function pollCommand(cmdId,el){
       }
     }catch(e){console.error('Poll:',e)}
   },3000);
+}
+
+function setMode(mode){
+  const isDemo=mode==='simulation';
+  $('radioDemo').checked=isDemo;$('radioLive').checked=!isDemo;
+  $('optDemo').classList.toggle('active',isDemo);$('optLive').classList.toggle('active',!isDemo);
+  $('modeBadge').className='mode-badge '+(isDemo?'demo':'live');
+  $('modeBadge').textContent=isDemo?'✅ 🟢 MODO DEMO':'⚠️ 🔴 MODO LIVE';
+  $('headerBadge').className='badge '+(isDemo?'demo':'live');
+  $('headerBadge').textContent=isDemo?'🟢 DEMO':'🔴 LIVE';
+  $('panelLive').style.display=isDemo?'none':'block';
+  $('panelDemo').style.display=isDemo?'block':'none';
+  // Mobile buttons
+  $('mbBtnDemo').className='mb-btn'+(isDemo?' active-demo':'');
+  $('mbBtnLive').className='mb-btn'+(isDemo?'':' active-live');
+}
+function toggleMobileSidebar(){
+  $('mobileSidebar').classList.toggle('open');
+  $('mobileOverlay').classList.toggle('open');
 }
 
 function esc(s){if(!s)return'—';const d=document.createElement('div');d.textContent=String(s);return d.innerHTML}

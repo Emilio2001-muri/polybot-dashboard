@@ -226,6 +226,66 @@ def _get_engine():
     return _engine
 
 
+def _execute_simulation(balance: float, rounds: int):
+    """Run a full simulation using the Simulator, saving results to DB."""
+    from simulator import Simulator
+    db = TradeDatabase()
+
+    sim = Simulator(initial_balance=balance)
+    result = sim.run_simulation(
+        num_rounds=rounds, markets_per_round=6, include_arbitrage=True,
+    )
+
+    # Save to DB (same as dashboard.py does)
+    db.clear_all()
+    for trade in result.trades_log:
+        db.save_trade({
+            "trade_id": trade.get("trade_id", ""),
+            "market_question": trade.get("market", ""),
+            "condition_id": trade.get("trade_id", ""),
+            "side": trade.get("side", trade.get("type", "")),
+            "trade_type": trade.get("type", ""),
+            "cost_usd": trade.get("cost", 0),
+            "pnl": trade.get("pnl", 0),
+            "status": "closed",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+        db.update_trade(trade.get("trade_id", ""), {
+            "pnl": trade.get("pnl", 0),
+            "status": "closed",
+            "closed_at": datetime.now(timezone.utc).isoformat(),
+        })
+    for _ts, bv in result.balance_history:
+        db.save_balance_snapshot({
+            "balance": bv, "total_pnl": bv - result.initial_balance,
+            "daily_pnl": bv - result.initial_balance,
+            "open_positions": 0, "risk_score": 0,
+        })
+    db.save_scan_log({
+        "scan_number": 1, "markets_scanned": rounds * 6,
+        "arbitrage_found": result.arbitrage_trades,
+        "trades_executed": result.total_trades, "trades_skipped": 0,
+        "duration_seconds": result.duration_minutes * 60,
+    })
+
+    logger.info(
+        f"SIM done: {result.total_trades} trades, "
+        f"${result.final_balance:.2f} final, "
+        f"${result.total_pnl:+.2f} PnL, "
+        f"{result.win_rate:.0%} WR"
+    )
+
+    return {
+        "total_trades": result.total_trades,
+        "final_balance": round(result.final_balance, 2),
+        "total_pnl": round(result.total_pnl, 2),
+        "win_rate": round(result.win_rate * 100),
+        "max_drawdown": round(result.max_drawdown, 2),
+        "arb_trades": result.arbitrage_trades,
+        "dir_trades": result.directional_trades,
+    }
+
+
 def _execute_scans(count: int, is_loop: bool = False):
     """Run N scan cycles using the TradingEngine, saving results to DB."""
     db = TradeDatabase()
@@ -323,6 +383,22 @@ def check_and_execute_commands():
                 "completed_at": datetime.now(timezone.utc).isoformat(),
             })
             logger.info(f"✅ Command completed: {len(results)} scans done")
+
+        elif action == "simulate":
+            sim_balance = float(cmd.get("balance", 50))
+            sim_rounds = int(cmd.get("rounds", 30))
+            sim_result = _execute_simulation(sim_balance, sim_rounds)
+            # Push fresh data immediately
+            collect_and_push()
+            upsert("command", {
+                "id": cmd_id,
+                "action": action,
+                "status": "completed",
+                "sim_result": sim_result,
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+            })
+            logger.info(f"✅ Simulation completed: {sim_result['total_trades']} trades")
+
         else:
             upsert("command", {
                 "id": cmd_id,
