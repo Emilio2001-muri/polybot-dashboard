@@ -84,12 +84,16 @@ def upsert(key: str, value):
 # ============================================================
 # DATA COLLECTION
 # ============================================================
+_sim_mode_active = False  # True after running simulation
+
+
 def collect_and_push():
     """Read local SQLite DB and push to Supabase."""
+    global _sim_mode_active
     db = TradeDatabase()
 
     # --- Status ---
-    mode = config.TRADING_MODE
+    mode = "simulation" if _sim_mode_active else config.TRADING_MODE
     wallet = config.POLYGON_WALLET_ADDRESS
     wallet_short = f"{wallet[:6]}...{wallet[-4:]}" if wallet and len(wallet) > 10 else "—"
 
@@ -104,7 +108,7 @@ def collect_and_push():
     balance_history = db.get_balance_history()
     trade_stats = db.get_trade_stats()
 
-    if mode == "simulation":
+    if _sim_mode_active or mode == "simulation":
         if balance_history:
             current = balance_history[-1].get("balance", config.SIMULATION_BALANCE)
         else:
@@ -385,10 +389,12 @@ def check_and_execute_commands():
             logger.info(f"✅ Command completed: {len(results)} scans done")
 
         elif action == "simulate":
+            global _sim_mode_active
             sim_balance = float(cmd.get("balance", 50))
             sim_rounds = int(cmd.get("rounds", 30))
             sim_result = _execute_simulation(sim_balance, sim_rounds)
-            # Push fresh data immediately
+            # Push fresh data in simulation mode
+            _sim_mode_active = True
             collect_and_push()
             upsert("command", {
                 "id": cmd_id,
@@ -424,6 +430,9 @@ def main():
     while True:
         try:
             check_and_execute_commands()
+            # Regular periodic push uses live mode (sim push already happened inside command handler)
+            global _sim_mode_active
+            _sim_mode_active = False
             collect_and_push()
         except KeyboardInterrupt:
             logger.info("Pusher stopped by user")

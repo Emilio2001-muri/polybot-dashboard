@@ -143,6 +143,18 @@ a{color:var(--blue);text-decoration:none}a:hover{text-decoration:underline}
 .scan-status{padding:12px 16px;border-radius:8px;font-size:13px;margin:8px 0;display:none}
 .scan-status.running{display:block;background:rgba(74,158,255,0.08);border:1px solid rgba(74,158,255,0.2);color:var(--blue)}
 
+/* ─── THREE DOT MENU ─── */
+.header-row{display:flex;justify-content:space-between;align-items:flex-start}
+.dot-menu{position:relative}
+.dot-menu-btn{background:none;border:none;color:var(--txt2);font-size:24px;cursor:pointer;padding:4px 8px;border-radius:6px;line-height:1}
+.dot-menu-btn:hover{background:rgba(255,255,255,0.06)}
+.dot-menu-panel{display:none;position:absolute;right:0;top:32px;background:var(--surface);border:1px solid var(--border2);border-radius:10px;min-width:200px;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,0.4);overflow:hidden}
+.dot-menu-panel.open{display:block}
+.dot-menu-panel a,.dot-menu-panel button{display:block;width:100%;text-align:left;padding:10px 16px;font-size:13px;color:var(--txt);background:none;border:none;cursor:pointer;font-family:var(--font);text-decoration:none}
+.dot-menu-panel a:hover,.dot-menu-panel button:hover{background:rgba(255,255,255,0.05)}
+.dot-menu-sep{height:1px;background:var(--border);margin:4px 0}
+.dot-menu-label{padding:6px 16px;font-size:11px;color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:0.5px}
+
 /* ─── MOBILE TOP BAR ─── */
 .mobile-bar{display:none;background:var(--bg);border-bottom:1px solid var(--border);padding:10px 16px;align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:100}
 .mobile-bar .mb-title{font-size:16px;font-weight:700}
@@ -181,8 +193,8 @@ a{color:var(--blue);text-decoration:none}a:hover{text-decoration:underline}
     <span class="mb-title">🎯 PolyBot</span>
   </div>
   <div class="mb-mode">
-    <button class="mb-btn active-live" id="mbBtnDemo" onclick="setMode('simulation')">DEMO</button>
-    <button class="mb-btn" id="mbBtnLive" onclick="setMode('live')">LIVE</button>
+    <button class="mb-btn" id="mbBtnDemo" onclick="setMode('simulation')">DEMO</button>
+    <button class="mb-btn active-live" id="mbBtnLive" onclick="setMode('live')">LIVE</button>
   </div>
 </div>
 <div class="mobile-overlay" id="mobileOverlay" onclick="toggleMobileSidebar()"></div>
@@ -254,8 +266,29 @@ a{color:var(--blue);text-decoration:none}a:hover{text-decoration:underline}
 <div class="main">
 
   <div class="header">
-    <h1>🎯 PolyBot Dashboard <span class="badge live" id="headerBadge">🔴 LIVE</span></h1>
-    <div class="timestamp" id="timestamp">Última actualización: —</div>
+    <div class="header-row">
+      <div>
+        <h1>🎯 PolyBot Dashboard <span class="badge live" id="headerBadge">🔴 LIVE</span></h1>
+        <div class="timestamp" id="timestamp">Última actualización: —</div>
+      </div>
+      <div class="dot-menu">
+        <button class="dot-menu-btn" onclick="$('dotPanel').classList.toggle('open')" title="Menú">⋮</button>
+        <div class="dot-menu-panel" id="dotPanel">
+          <button onclick="location.reload();$('dotPanel').classList.remove('open')">🔄 Rerun</button>
+          <button onclick="setMode('simulation');$('dotPanel').classList.remove('open')">🧪 Cambiar a DEMO</button>
+          <button onclick="setMode('live');$('dotPanel').classList.remove('open')">🔴 Cambiar a LIVE</button>
+          <div class="dot-menu-sep"></div>
+          <div class="dot-menu-label">Tema</div>
+          <button onclick="document.documentElement.style.setProperty('--bg','#0e1117');document.documentElement.style.setProperty('--surface','#1a1f2e');$('dotPanel').classList.remove('open')">🌙 Dark</button>
+          <button onclick="document.documentElement.style.setProperty('--bg','#ffffff');document.documentElement.style.setProperty('--surface','#f0f2f6');document.documentElement.style.setProperty('--txt','#1a1a2e');document.documentElement.style.setProperty('--txt2','#555');document.documentElement.style.setProperty('--txt3','#888');document.documentElement.style.setProperty('--border','rgba(0,0,0,0.08)');$('dotPanel').classList.remove('open')">☀️ Light</button>
+          <div class="dot-menu-sep"></div>
+          <button onclick="$('autoRefresh').checked=!$('autoRefresh').checked;$('autoRefresh').dispatchEvent(new Event('change'));$('dotPanel').classList.remove('open')">⏱️ Auto-refresh toggle</button>
+          <div class="dot-menu-sep"></div>
+          <a href="https://polygonscan.com/address/0xB7d3f4EC33414dC3B3e9f9a0cCAbC21bf30fAa99" target="_blank">🔗 PolygonScan</a>
+          <a href="https://polymarket.com" target="_blank">🎯 Polymarket</a>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- KPIs -->
@@ -388,8 +421,9 @@ const SUPABASE_URL='https://swvwgpmnzjggmplmjzeu.supabase.co';
 const SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN3dndncG1uempnZ21wbG1qemV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzNjc3MTcsImV4cCI6MjA4ODk0MzcxN30.OQAMGlxk1C0fWnYQCrKFzWJXX_i1GW6xbC2wflkTZtc';
 const sb=supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
 
-let cache={status:{},balance:{},stats:{},trades:[],history:[],scans:[],open:[],risk:{}};
+let cache={status:{},balance:{},stats:{},trades:[],balance_history:[],scan_log:[],open_positions:[],risk:{}};
 let balChart=null,pnlChart=null;
+let userModeOverride=null;
 const $=id=>document.getElementById(id);
 
 /* ─── MODE TOGGLE ─── */
@@ -425,19 +459,21 @@ sb.channel('pb-live')
 function renderAll(){renderStatus();renderKPIs();renderChart();renderPnlChart();renderTrades();renderScans();renderOpen();renderStats()}
 
 function renderStatus(){
-  const s=cache.status||{};const isLive=s.mode==='live';
-  $('radioLive').checked=isLive;$('radioDemo').checked=!isLive;
-  $('optDemo').classList.toggle('active',!isLive);$('optLive').classList.toggle('active',isLive);
-  $('modeBadge').className='mode-badge '+(isLive?'live':'demo');
-  $('modeBadge').textContent=isLive?'⚠️ 🔴 MODO LIVE':'✅ 🟢 MODO DEMO';
-  $('headerBadge').className='badge '+(isLive?'live':'demo');
-  $('headerBadge').textContent=isLive?'🔴 LIVE':'🟢 DEMO';
-  $('panelLive').style.display=isLive?'block':'none';
-  $('panelDemo').style.display=isLive?'none':'block';
-  // Mobile bar mode buttons
-  $('mbBtnDemo').className='mb-btn'+(!isLive?' active-demo':'');
-  $('mbBtnLive').className='mb-btn'+(isLive?' active-live':'');
-  // Mobile wallet
+  const s=cache.status||{};
+  // Only auto-set mode from server on first load (userModeOverride===null)
+  if(userModeOverride===null){
+    const isLive=s.mode==='live';
+    $('radioLive').checked=isLive;$('radioDemo').checked=!isLive;
+    $('optDemo').classList.toggle('active',!isLive);$('optLive').classList.toggle('active',isLive);
+    $('modeBadge').className='mode-badge '+(isLive?'live':'demo');
+    $('modeBadge').textContent=isLive?'⚠️ 🔴 MODO LIVE':'✅ 🟢 MODO DEMO';
+    $('headerBadge').className='badge '+(isLive?'live':'demo');
+    $('headerBadge').textContent=isLive?'🔴 LIVE':'🟢 DEMO';
+    $('panelLive').style.display=isLive?'block':'none';
+    $('panelDemo').style.display=isLive?'none':'block';
+    $('mbBtnDemo').className='mb-btn'+(!isLive?' active-demo':'');
+    $('mbBtnLive').className='mb-btn'+(isLive?' active-live':'');
+  }
   const wm=s.wallet||'';
   $('walletShortMobile').textContent=wm||'—';
   if(s.last_scan){$('timestamp').textContent='Última actualización: '+new Date(s.last_scan).toLocaleString('sv-SE')}
@@ -453,7 +489,7 @@ function renderKPIs(){
   const b=cache.balance||{},s=cache.stats||{},r=cache.risk||{};
   const cur=b.current||0,pnl=b.pnl||0,pct=b.pnl_pct||0;
   const tot=s.total_trades||0,w=s.wins||0,l=s.losses||0,wr=s.win_rate||0;
-  const rs=Math.round((r.score||0)*100),openN=(cache.open||[]).length;
+  const rs=Math.round((r.score||0)*100),openN=(cache.open_positions||[]).length;
   $('kBalance').textContent='$'+cur.toFixed(2);
   $('kBalDelta').textContent=pnl!==0?'$'+(pnl>=0?'+':'')+pnl.toFixed(2):'';
   $('kBalDelta').className='kpi-delta '+(pnl>=0?'green':'red');
@@ -466,7 +502,7 @@ function renderKPIs(){
 }
 
 function renderChart(){
-  const hist=cache.history||[];
+  const hist=cache.balance_history||[];
   if(!hist.length){$('balEmpty').style.display='flex';$('balChart').style.display='none';return}
   $('balEmpty').style.display='none';$('balChart').style.display='block';
   const vals=hist.map(h=>typeof h==='number'?h:(h.b||h.balance||0));
@@ -494,13 +530,13 @@ function renderTrades(){
 }
 
 function renderScans(){
-  const scans=cache.scans||[];
+  const scans=cache.scan_log||[];
   if(!scans.length){$('scanBody').innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--txt3);padding:20px">Sin logs de escaneo</td></tr>';return}
   $('scanBody').innerHTML=scans.slice(-20).reverse().map(s=>`<tr><td>#${s.scan_number||'?'}</td><td>${s.markets_scanned||0}</td><td>${s.arbitrage_found||0}</td><td>${s.trades_executed||0}</td><td>${(s.duration_seconds||0).toFixed(1)}s</td></tr>`).join('');
 }
 
 function renderOpen(){
-  const pos=cache.open||[];
+  const pos=cache.open_positions||[];
   $('openSection').style.display=pos.length?'block':'none';
   if(!pos.length)return;
   $('openBody').innerHTML=pos.map(p=>`<tr><td>${esc((p.market||'—').substring(0,50))}</td><td>${esc(p.side||'—')}</td><td><span class="tag ${p.type==='arbitrage'?'arb':'dir'}">${p.type||'—'}</span></td><td>$${(p.cost_usd||0).toFixed(2)}</td></tr>`).join('');
@@ -565,6 +601,7 @@ function pollCommand(cmdId,el){
 }
 
 function setMode(mode){
+  userModeOverride=mode;
   const isDemo=mode==='simulation';
   $('radioDemo').checked=isDemo;$('radioLive').checked=!isDemo;
   $('optDemo').classList.toggle('active',isDemo);$('optLive').classList.toggle('active',!isDemo);
@@ -585,6 +622,9 @@ function toggleMobileSidebar(){
 
 function esc(s){if(!s)return'—';const d=document.createElement('div');d.textContent=String(s);return d.innerHTML}
 function shortDate(s){if(!s)return'—';try{return new Date(s).toLocaleString('sv-SE')}catch{return'—'}}
+
+// Close dot menu on click outside
+document.addEventListener('click',e=>{if(!e.target.closest('.dot-menu'))$('dotPanel').classList.remove('open')});
 
 loadAll();setInterval(loadAll,15000);
 </script>
